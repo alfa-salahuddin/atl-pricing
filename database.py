@@ -6,7 +6,6 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 def get_engine():
     try:
         url = st.secrets["DATABASE_URL"]
-        url = "postgresql://postgres.nvrcdxuaadhrzzhcrrfo:TnCfceLMbIw25PN2@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require"
     except Exception:
         import os
         from dotenv import load_dotenv
