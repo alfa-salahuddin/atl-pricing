@@ -9,6 +9,7 @@ def get_engine():
     """
     Reads DATABASE_URL from Streamlit secrets (production)
     or falls back to a local .env / environment variable for dev use.
+    Supabase requires sslmode=require — added automatically if missing.
     """
     try:
         url = st.secrets["DATABASE_URL"]
@@ -22,7 +23,16 @@ def get_engine():
         st.error("DATABASE_URL is not set. Add it to Streamlit secrets or a local .env file.")
         st.stop()
 
-    return create_engine(url, pool_pre_ping=True)
+    # Supabase requires SSL — append sslmode=require if not already in the URL
+    if "sslmode" not in url:
+        separator = "&" if "?" in url else "?"
+        url = url + separator + "sslmode=require"
+
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        connect_args={"sslmode": "require"},
+    )
 
 
 engine = get_engine()
