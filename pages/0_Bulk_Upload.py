@@ -39,12 +39,12 @@ with tab_prod:
                 st.warning("No currencies yet")
         with c3:
             st.write("**Exchange rates**")
-            st.write(f"• `SGD` → `SGD` = 1.00 multiply *(auto — no entry needed)*")
+            st.write(f"• `SGD` → `SGD` = 1.00 multiply *(auto)*")
             if rates:
                 for r in rates:
                     st.write(f"• `{r.base_currency}` → `{r.target_currency}` = {r.rate} ({r.direction}) [{r.rate_date}]")
             else:
-                st.warning("No exchange rates yet — add in Reference Data for non-SGD currencies")
+                st.warning("No exchange rates yet")
 
     st.divider()
 
@@ -57,21 +57,6 @@ with tab_prod:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-    st.info(f"""
-**Template column guide:**
-- `item_code` — unique product code e.g. TW-CHK-60G
-- `product_category` — e.g. Snacks, Cleaning, Diapers
-- `product_name` — full product name
-- `packing` — e.g. 24 x 60g / ctn
-- `uom` — e.g. CTN
-- `origin` — e.g. Malaysia
-- `supplier_code` — must exactly match a supplier code above
-- `cost_currency` — e.g. MYR, SGD, USD. If **SGD**, exchange rate = 1.00 automatically
-- `cost_price` — unit cost from supplier
-- `margin_pct` — your margin e.g. 18 for 18%
-- `discount_pct`, `cost_additions`, `ctn_cbm`, `ctn_weight`, `hs_code` — optional
-    """)
-
     st.divider()
 
     uploaded_prod = st.file_uploader(
@@ -81,28 +66,31 @@ with tab_prod:
     )
 
     if uploaded_prod:
-        file_bytes      = uploaded_prod.read()
-        rows, errors    = validate_and_parse(file_bytes, "new_products")
+        file_bytes   = uploaded_prod.read()
+        rows, errors = validate_and_parse(file_bytes, "new_products")
 
         st.write(f"**Rows read from file:** {len(rows)}")
 
         if errors:
-            st.error("The file has errors — fix and re-upload:")
-            for e in errors:
+            st.warning(f"{len(errors)} validation error(s):")
+            for e in errors[:20]:
                 st.write(f"• {e}")
-            st.stop()
+            if len(errors) > 20:
+                st.write(f"... and {len(errors) - 20} more")
 
         if not rows:
-            st.warning("No data rows found. Make sure you filled in data below the header row.")
+            st.error("No valid rows to import.")
             st.stop()
 
-        # Reload rates inside upload block
-        rates_all = db.query(ExchangeRate).order_by(ExchangeRate.rate_date.desc()).all()
+        # Load reference data
+        rates_all    = db.query(ExchangeRate).order_by(ExchangeRate.rate_date.desc()).all()
+        sup_codes    = {s.supplier_code for s in db.query(Supplier).all()}
+        curr_codes   = {c.currency_code for c in db.query(Currency).all()}
+        existing_items = {p.item_code for p in db.query(Product).all()}
 
         def best_rate(cost_currency: str):
-            """Return rate object or None. SGD always returns None (handled by compute_all)."""
             if cost_currency.upper() == BASE_CURRENCY:
-                return None  # SGD — no rate needed, compute_all handles it
+                return None
             for r in rates_all:
                 if r.base_currency == cost_currency.upper() and r.target_currency == BASE_CURRENCY:
                     return r
@@ -118,43 +106,42 @@ with tab_prod:
             issues    = []
 
             if not item_code:
-                issues.append("item_code is empty")
-            elif db.get(Product, item_code):
-                issues.append(f"Item code `{item_code}` already exists in Products")
+                issues.append("item_code is blank")
+            elif item_code in existing_items:
+                issues.append(f"Already exists in database — skipped")
 
-            sup_code = str(row.get("supplier_code") or "").strip().upper()
+            sup_code  = str(row.get("supplier_code") or "").strip().upper()
             row["supplier_code"] = sup_code
-            if not db.get(Supplier, sup_code):
-                issues.append(f"Supplier code `{sup_code}` not found in Suppliers")
+            if sup_code not in sup_codes:
+                issues.append(f"Supplier `{sup_code}` not found")
 
             curr_code = str(row.get("cost_currency") or "").strip().upper()
             row["cost_currency"] = curr_code
+            if curr_code not in curr_codes:
+                issues.append(f"Currency `{curr_code}` not found")
 
-            rate_obj = best_rate(curr_code)
-
-            # Only require an exchange rate if currency is NOT SGD
+            rate_obj  = best_rate(curr_code)
             if curr_code and curr_code != BASE_CURRENCY and rate_obj is None:
-                issues.append(
-                    f"No exchange rate found for `{curr_code}` → `{BASE_CURRENCY}`. "
-                    f"Add it in Reference Data → Exchange Rates first."
-                )
+                issues.append(f"No exchange rate for `{curr_code}` → SGD")
 
             if issues:
-                skipped_rows.append({"item_code": item_code or "(blank)", "issues": issues})
+                skipped_rows.append({"item_code": item_code, "issues": issues})
             else:
-                row["item_code"]  = item_code
-                row["_rate_obj"]  = rate_obj
+                row["item_code"] = item_code
+                row["_rate_obj"] = rate_obj
                 valid_rows.append(row)
 
         if skipped_rows:
-            st.warning(f"{len(skipped_rows)} row(s) have issues and will be skipped:")
-            for s in skipped_rows:
-                st.write(f"**{s['item_code']}:**")
-                for issue in s["issues"]:
-                    st.write(f"  • {issue}")
+            st.warning(f"{len(skipped_rows)} row(s) will be skipped:")
+            # Show first 20 skipped rows only
+            for s in skipped_rows[:20]:
+                reasons = " | ".join(s["issues"])
+                st.write(f"• **{s['item_code']}**: {reasons}")
+            if len(skipped_rows) > 20:
+                st.write(f"... and {len(skipped_rows) - 20} more skipped rows")
 
         if not valid_rows:
-            st.error("No valid rows to import. Fix the issues above and re-upload.")
+            st.error("No valid rows to import after validation.")
             st.stop()
 
         # Build preview
@@ -163,43 +150,43 @@ with tab_prod:
             r        = row["_rate_obj"]
             rate_val = r.rate      if r else 1.0
             rate_dir = r.direction if r else "multiply"
-
-            result = compute_all(
-                float(row.get("cost_price")    or 0),
-                float(row.get("discount_pct")  or 0),
-                float(row.get("cost_additions")or 0),
-                rate_val,
-                rate_dir,
-                float(row.get("margin_pct")    or 0),
+            result   = compute_all(
+                float(row.get("cost_price")     or 0),
+                float(row.get("discount_pct")   or 0),
+                float(row.get("cost_additions") or 0),
+                rate_val, rate_dir,
+                float(row.get("margin_pct")     or 0),
                 cost_currency=row.get("cost_currency", ""),
             )
             row["_computed"] = result
-
-            rate_display = "1.00 (SGD auto)" if row.get("cost_currency","").upper() == BASE_CURRENCY \
-                           else str(rate_val)
-
             preview.append({
-                "Item code":   row["item_code"],
-                "Name":        row.get("product_name", ""),
-                "Category":    row.get("product_category", ""),
-                "Supplier":    row.get("supplier_code", ""),
-                "Cost":        f"{row.get('cost_currency','')} {float(row.get('cost_price',0)):.4f}",
-                "Rate used":   rate_display,
-                "Net SGD":     round(result["net_cost_sgd"], 4),
-                "Margin %":    row.get("margin_pct", ""),
-                "FOB SGD":     round(result["fob_price_sgd"], 4),
+                "Item code":  row["item_code"],
+                "Name":       row.get("product_name", ""),
+                "Category":   row.get("product_category", ""),
+                "Supplier":   row.get("supplier_code", ""),
+                "Currency":   row.get("cost_currency", ""),
+                "Cost price": float(row.get("cost_price") or 0),
+                "Net SGD":    round(result["net_cost_sgd"], 4),
+                "Margin %":   row.get("margin_pct", ""),
+                "FOB SGD":    round(result["fob_price_sgd"], 4),
             })
 
-        st.success(f"**{len(valid_rows)} product(s) ready to import.** Review below then click Confirm.")
-        st.dataframe(pd.DataFrame(preview), use_container_width=True, hide_index=True)
+        st.success(f"**{len(valid_rows)} product(s) ready to import.**")
+        if skipped_rows:
+            st.info(f"{len(skipped_rows)} row(s) will be skipped (see warnings above).")
 
+        st.dataframe(pd.DataFrame(preview), use_container_width=True, hide_index=True)
         st.divider()
 
         if st.button("✅  Confirm and import products", type="primary"):
-            imported     = 0
-            import_errors = []
+            imported      = 0
+            failed        = []
+            BATCH_SIZE    = 50
 
-            for row in valid_rows:
+            progress      = st.progress(0)
+            status_text   = st.empty()
+
+            for i, row in enumerate(valid_rows):
                 try:
                     r      = row["_rate_obj"]
                     result = row["_computed"]
@@ -215,7 +202,7 @@ with tab_prod:
                         cost_currency    = row.get("cost_currency", ""),
                         cost_price       = float(row.get("cost_price")     or 0),
                         discount_pct     = float(row.get("discount_pct")   or 0),
-                        cost_additions   = float(row.get("cost_additions")  or 0),
+                        cost_additions   = float(row.get("cost_additions") or 0),
                         net_cost_orig    = result["net_cost_orig"],
                         exchange_rate_id = r.id if r else None,
                         net_cost_sgd     = result["net_cost_sgd"],
@@ -224,20 +211,45 @@ with tab_prod:
                         margin_pct       = float(row.get("margin_pct") or 0),
                         fob_price_sgd    = result["fob_price_sgd"],
                     ))
-                    imported += 1
-                except Exception as e:
-                    import_errors.append(f"{row['item_code']}: {str(e)}")
 
-            if import_errors:
-                db.rollback()
-                st.error("Import failed. Errors:")
-                for e in import_errors:
-                    st.write(f"• {e}")
-            else:
+                    # Commit in batches of 50
+                    if (i + 1) % BATCH_SIZE == 0:
+                        try:
+                            db.commit()
+                            imported += BATCH_SIZE
+                        except Exception as e:
+                            db.rollback()
+                            failed.append(f"Batch ending at row {i+1}: {str(e)[:120]}")
+
+                    # Update progress bar
+                    progress.progress((i + 1) / len(valid_rows))
+                    status_text.text(f"Importing... {i + 1} of {len(valid_rows)}")
+
+                except Exception as e:
+                    failed.append(f"{row['item_code']}: {str(e)[:120]}")
+
+            # Commit any remaining rows
+            try:
                 db.commit()
-                st.success(f"✅  {imported} product(s) imported successfully!")
-                st.balloons()
-                st.info("Go to the Products page to verify your imported products.")
+                remaining = len(valid_rows) % BATCH_SIZE
+                imported += remaining if remaining > 0 else 0
+            except Exception as e:
+                db.rollback()
+                failed.append(f"Final batch: {str(e)[:120]}")
+
+            progress.empty()
+            status_text.empty()
+
+            if failed:
+                st.warning(f"Import completed with some errors — {len(failed)} row(s) failed:")
+                for f in failed[:10]:
+                    st.write(f"• {f}")
+            
+            # Recount actual imported rows from DB
+            new_count = db.query(Product).count()
+            st.success(f"✅ Import complete! Total products in database: **{new_count}**")
+            st.balloons()
+            st.info("Go to the Products page to verify your imported products.")
 
 # ── CUSTOMERS ─────────────────────────────────────────────────────────────────
 with tab_cust:
@@ -271,14 +283,16 @@ with tab_cust:
             st.stop()
 
         if not rows:
-            st.warning("No data rows found in the file.")
+            st.warning("No data rows found.")
             st.stop()
 
-        skipped    = []
-        valid_rows = []
+        existing_custs = {c.cust_code for c in db.query(Customer).all()}
+        skipped        = []
+        valid_rows     = []
+
         for row in rows:
             code = str(row.get("cust_code") or "").strip().upper()
-            if db.get(Customer, code):
+            if code in existing_custs:
                 skipped.append(f"`{code}` already exists")
             else:
                 row["cust_code"] = code
@@ -301,7 +315,7 @@ with tab_cust:
         } for r in valid_rows]), use_container_width=True, hide_index=True)
 
         if st.button("✅  Confirm and import customers", type="primary"):
-            imported     = 0
+            imported      = 0
             import_errors = []
             for row in valid_rows:
                 try:
@@ -316,7 +330,7 @@ with tab_cust:
                     ))
                     imported += 1
                 except Exception as e:
-                    import_errors.append(f"{row['cust_code']}: {str(e)}")
+                    import_errors.append(f"{row['cust_code']}: {str(e)[:80]}")
 
             if import_errors:
                 db.rollback()
