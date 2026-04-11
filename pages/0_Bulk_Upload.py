@@ -85,8 +85,10 @@ with tab_prod:
         # Load reference data
         rates_all    = db.query(ExchangeRate).order_by(ExchangeRate.rate_date.desc()).all()
         sup_codes    = {s.supplier_code for s in db.query(Supplier).all()}
-        curr_codes   = {c.currency_code for c in db.query(Currency).all()}
+        curr_codes     = {c.currency_code for c in db.query(Currency).all()}
         existing_items = {p.item_code for p in db.query(Product).all()}
+        from models import HSCode
+        valid_hs_codes = {h.hs_code for h in db.query(HSCode).all()}
 
         def best_rate(cost_currency: str):
             if cost_currency.upper() == BASE_CURRENCY:
@@ -193,7 +195,7 @@ with tab_prod:
                     db.add(Product(
                         item_code        = row["item_code"],
                         product_category = row.get("product_category", ""),
-                        hs_code          = row.get("hs_code") or None,
+                        hs_code          = row.get("hs_code") if row.get("hs_code") and row.get("hs_code") in valid_hs_codes else None,
                         product_name     = row.get("product_name", ""),
                         packing          = row.get("packing", ""),
                         uom              = row.get("uom", ""),
@@ -216,7 +218,6 @@ with tab_prod:
                     if (i + 1) % BATCH_SIZE == 0:
                         try:
                             db.commit()
-                            imported += BATCH_SIZE
                         except Exception as e:
                             db.rollback()
                             failed.append(f"Batch ending at row {i+1}: {str(e)[:120]}")
@@ -231,8 +232,6 @@ with tab_prod:
             # Commit any remaining rows
             try:
                 db.commit()
-                remaining = len(valid_rows) % BATCH_SIZE
-                imported += remaining if remaining > 0 else 0
             except Exception as e:
                 db.rollback()
                 failed.append(f"Final batch: {str(e)[:120]}")
