@@ -1,1 +1,110 @@
+"""
+One-time fix — recalculates FOB prices for all products using:
+  1. Correct margin convention: MARKUP ON COST (cost × (1 + margin%))
+  2. Correct rounding: always round UP to nearest 0.10
+  3. Corrects any margins stored as decimals (0.2 instead of 20)
+Run once, then delete this page from GitHub.
+"""
+import streamlit as st
+import pandas as pd
+from database import SessionLocal
+from models import Product, ExchangeRate
+from utils.pricing import compute_all, BASE_CURRENCY
+
+st.set_page_config(page_title="Fix All Prices — ATL Pricing", layout="wide")
+st.title("Recalculate all FOB prices")
+st.warning("""
+This will recalculate FOB prices for ALL products using:
+- **Markup on cost** formula: FOB = net cost SGD × (1 + margin%)
+- **Round up** to nearest SGD 0.10
+- Fix any margins stored as decimals (e.g. 0.2 → 20%)
+
+Run this once, then delete this page from GitHub.
+""")
+
+db = SessionLocal()
+all_products = db.query(Product).all()
+st.write(f"**Total products to update:** {len(all_products)}")
+
+# Preview sample
+sample = all_products[:10]
+if sample:
+    preview_rows = []
+    for p in sample:
+        rate_obj = db.get(ExchangeRate, p.exchange_rate_id) if p.exchange_rate_id else None
+        rate_val = rate_obj.rate      if rate_obj else 1.0
+        rate_dir = rate_obj.direction if rate_obj else "multiply"
+        correct_margin = p.margin_pct * 100 if 0 < p.margin_pct < 1 else p.margin_pct
+        result = compute_all(
+            p.cost_price, p.discount_pct, p.cost_additions,
+            rate_val, rate_dir, correct_margin,
+            cost_currency=p.cost_currency,
+        )
+        preview_rows.append({
+            "Item code":       p.item_code,
+            "Name":            p.product_name[:30],
+            "Old margin %":    p.margin_pct,
+            "New margin %":    correct_margin,
+            "Old FOB SGD":     round(p.fob_price_sgd, 4),
+            "New FOB SGD":     result["fob_price_sgd"],
+        })
+    st.write("**Preview of first 10 products:**")
+    st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
+
+st.divider()
+
+if st.button("✅  Recalculate ALL products now", type="primary"):
+    fixed   = 0
+    errors  = []
+    progress = st.progress(0)
+    status   = st.empty()
+
+    for i, p in enumerate(all_products):
+        try:
+            rate_obj = db.get(ExchangeRate, p.exchange_rate_id) if p.exchange_rate_id else None
+            rate_val = rate_obj.rate      if rate_obj else 1.0
+            rate_dir = rate_obj.direction if rate_obj else "multiply"
+
+            # Fix decimal margins
+            correct_margin = p.margin_pct * 100 if 0 < p.margin_pct < 1 else p.margin_pct
+
+            result = compute_all(
+                p.cost_price, p.discount_pct, p.cost_additions,
+                rate_val, rate_dir, correct_margin,
+                cost_currency=p.cost_currency,
+            )
+
+            p.margin_pct    = correct_margin
+            p.net_cost_orig = result["net_cost_orig"]
+            p.net_cost_sgd  = result["net_cost_sgd"]
+            p.fob_price_sgd = result["fob_price_sgd"]
+            fixed += 1
+
+            if (i + 1) % 100 == 0:
+                db.commit()
+                status.text(f"Updated {i + 1} of {len(all_products)}...")
+
+            progress.progress((i + 1) / len(all_products))
+
+        except Exception as e:
+            errors.append(f"{p.item_code}: {str(e)[:80]}")
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        errors.append(f"Final commit: {str(e)[:80]}")
+
+    progress.empty()
+    status.empty()
+
+    if errors:
+        st.warning(f"{len(errors)} error(s):")
+        for e in errors[:10]:
+            st.write(f"• {e}")
+
+    st.success(f"✅ Done — **{fixed}** products recalculated with correct markup formula and rounding.")
+    st.info("Delete `99_Fix_Margins.py` from GitHub after verifying the Products page looks correct.")
+
+db.close()
 
