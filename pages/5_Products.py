@@ -148,8 +148,9 @@ Cost additions      = {cost_curr} {additions:.4f}
 Net cost (orig)     = {cost_price} × (1 - {discount}/100) + {additions} = {cost_curr} {result['net_cost_orig']:.4f}
 Exchange rate       = {rate_val} ({rate_dir})
 Net cost SGD        = {result['net_cost_sgd']:.4f}
-Margin              = {margin}%
-FOB price SGD       = {result['net_cost_sgd']:.4f} / (1 - {margin}/100) = SGD {result['fob_price_sgd']:.4f}
+Margin (markup)     = {margin}%
+FOB price (raw)     = {result['net_cost_sgd']:.4f} × (1 + {margin}/100) = SGD {round(result['net_cost_sgd'] * (1 + margin/100), 4):.4f}
+FOB price SGD       = SGD {result['fob_price_sgd']:.2f}  (rounded up to nearest 0.10)
             """)
     elif cost_price == 0:
         st.info("Enter a cost price to see the FOB price preview.")
