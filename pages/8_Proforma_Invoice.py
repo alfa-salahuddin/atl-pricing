@@ -166,6 +166,8 @@ def product_selection_panel(line_key: str):
         "Product name":  p.product_name,
         "Packing":       p.packing,
         "UOM":           p.uom,
+        "Cost SGD":      round(p.net_cost_sgd, 4),
+        "Margin %":      round(p.margin_pct, 2),
         "FOB SGD":       round(p.fob_price_sgd, 2),
         "Qty (ctns)":    0,
         "Item discount": 0.0,
@@ -176,18 +178,31 @@ def product_selection_panel(line_key: str):
         df_sel,
         column_config={
             "Select":        st.column_config.CheckboxColumn("Select", default=False),
-            "FOB SGD":       st.column_config.NumberColumn("FOB SGD",       format="%.2f", disabled=True),
-            "Qty (ctns)":    st.column_config.NumberColumn("Qty (ctns)",     min_value=0, step=1),
-            "Item discount": st.column_config.NumberColumn("Item disc (SGD)",min_value=0.0, step=0.10,
-                                                            format="%.2f"),
-            "Net FOB SGD":   st.column_config.NumberColumn("Net FOB SGD",   format="%.2f", disabled=True),
+            "Cost SGD":      st.column_config.NumberColumn("Cost SGD",       format="%.4f", disabled=True),
+            "Margin %":      st.column_config.NumberColumn("Margin %",        min_value=0.0, max_value=99.0,
+                                                            step=0.5, format="%.2f",
+                                                            help="Edit margin for this order only — product master not changed"),
+            "FOB SGD":       st.column_config.NumberColumn("FOB SGD (master)",format="%.2f", disabled=True),
+            "Qty (ctns)":    st.column_config.NumberColumn("Qty (ctns)",      min_value=0, step=1),
+            "Item discount": st.column_config.NumberColumn("Item disc (SGD)", min_value=0.0, step=0.0001,
+                                                            format="%.4f"),
+            "Net FOB SGD":   st.column_config.NumberColumn("Net FOB SGD",    format="%.2f", disabled=True),
         },
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
         key=f"{line_key}_editor",
     )
-    edited["Net FOB SGD"] = (edited["FOB SGD"] - edited["Item discount"]).round(2)
+    # Recompute FOB from cost using edited margin, then apply discount
+    import math
+    def calc_fob(row):
+        cost    = float(row.get("Cost SGD", 0))
+        margin  = float(row.get("Margin %", 0))
+        disc    = float(row.get("Item discount", 0))
+        raw_fob = cost * (1 + margin / 100)
+        rounded = math.ceil(round(raw_fob * 10, 8)) / 10   # round up to 0.10
+        return max(0.0, round(rounded - disc, 4))
+    edited["Net FOB SGD"] = edited.apply(calc_fob, axis=1)
     selected = edited[(edited["Select"] == True) & (edited["Qty (ctns)"] > 0)]
 
     if st.button("➕  Add to order", type="primary",
@@ -195,12 +210,18 @@ def product_selection_panel(line_key: str):
         added = 0
         for _, row in selected.iterrows():
             p       = prod_map.get(row["Item code"])
-            net_fob = max(0.0, round(float(row["FOB SGD"]) - float(row["Item discount"]), 2))
+            cost_sgd   = float(row.get("Cost SGD", 0))
+            edit_margin= float(row.get("Margin %", 0))
+            import math
+            raw_fob    = cost_sgd * (1 + edit_margin / 100)
+            fob_rounded= math.ceil(round(raw_fob * 10, 8)) / 10
+            net_fob    = max(0.0, round(fob_rounded - float(row["Item discount"]), 4))
             existing = next((l for l in st.session_state[line_key]
                              if l["item_code"] == row["Item code"]), None)
             if existing:
                 existing["qty_ctns"]      = int(row["Qty (ctns)"])
                 existing["item_discount"] = float(row["Item discount"])
+                existing["order_margin"]  = float(row.get("Margin %", p.margin_pct if p else 0))
                 existing["net_fob"]       = net_fob
             else:
                 st.session_state[line_key].append({
@@ -212,6 +233,8 @@ def product_selection_panel(line_key: str):
                     "supplier_code": sel_sup,
                     "port_code":     sel_port,
                     "fob_price_sgd": float(row["FOB SGD"]),
+                    "cost_sgd":      float(row.get("Cost SGD", p.net_cost_sgd if p else 0)),
+                    "order_margin":  float(row.get("Margin %", p.margin_pct if p else 0)),
                     "item_discount": float(row["Item discount"]),
                     "net_fob":       net_fob,
                     "qty_ctns":      int(row["Qty (ctns)"]),
@@ -241,18 +264,19 @@ def order_lines_panel(line_key: str):
         total_cbm    += line_cbm
         total_ctns   += line["qty_ctns"]
         display_rows.append({
-            "#":           i + 1,
-            "Item code":   line["item_code"],
-            "Product":     line["product_name"],
-            "Supplier":    line["supplier_code"],
-            "Packing":     line["packing"],
-            "UOM":         line["uom"],
-            "Qty (ctns)":  line["qty_ctns"],
-            "FOB SGD":     round(line["fob_price_sgd"], 2),
-            "Discount":    round(line["item_discount"], 2),
-            "Net FOB":     round(line["net_fob"], 2),
-            "Amount SGD":  amount,
-            "CBM":         line_cbm,
+            "#":            i + 1,
+            "Item code":    line["item_code"],
+            "Product":      line["product_name"],
+            "Supplier":     line["supplier_code"],
+            "Packing":      line["packing"],
+            "UOM":          line["uom"],
+            "Qty (ctns)":   line["qty_ctns"],
+            "Margin %":     line.get("order_margin", line.get("fob_price_sgd", 0)),
+            "FOB SGD":      round(line["fob_price_sgd"], 2),
+            "Discount":     round(line["item_discount"], 4),
+            "Net FOB":      round(line["net_fob"], 4),
+            "Amount SGD":   amount,
+            "CBM":          line_cbm,
         })
 
     st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
