@@ -58,6 +58,15 @@ tab_add, tab_edit, tab_view = st.tabs(["Add product", "Edit / delete product", "
 with tab_add:
     st.subheader("Add new product")
 
+    # Success banner after save
+    if "add_saved_code" in st.session_state:
+        st.success(f"✅ Item **{st.session_state['add_saved_code']}** successfully saved  "
+                   f"(FOB SGD {st.session_state.get('add_saved_fob', 0):.2f}). "
+                   f"All fields have been cleared — ready to add the next product.")
+        del st.session_state["add_saved_code"]
+        if "add_saved_fob" in st.session_state:
+            del st.session_state["add_saved_fob"]
+
     # Auto item code preview
     suggested_code = next_item_code()
     st.info(f"Next item code will be: **{suggested_code}** (auto-assigned on save)")
@@ -210,7 +219,12 @@ FOB price SGD       = SGD {result['fob_price_sgd']:.2f}  (rounded up to nearest 
                 fob_price_sgd    = result["fob_price_sgd"],
             ))
             db.commit()
-            st.success(f"✅ Product saved with item code **{item_code}**")
+            st.session_state["add_saved_code"] = item_code
+            st.session_state["add_saved_fob"]  = result["fob_price_sgd"]
+            # Clear all add-form fields
+            for key in list(st.session_state.keys()):
+                if key.startswith("add_"):
+                    del st.session_state[key]
             st.rerun()
 
 
@@ -219,6 +233,15 @@ FOB price SGD       = SGD {result['fob_price_sgd']:.2f}  (rounded up to nearest 
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_edit:
     st.subheader("Find product to edit or delete")
+
+    # Success banner
+    if "edit_saved_code" in st.session_state:
+        st.success(f"✅ Item **{st.session_state['edit_saved_code']}** "
+                   f"({st.session_state.get('edit_saved_name','')}) successfully saved. "
+                   f"All fields have been cleared.")
+        del st.session_state["edit_saved_code"]
+        if "edit_saved_name" in st.session_state:
+            del st.session_state["edit_saved_name"]
 
     # Search
     col_s1, col_s2, col_s3 = st.columns(3)
@@ -360,7 +383,8 @@ with tab_edit:
                     prod.fob_price_sgd    = e_result["fob_price_sgd"]
 
                     db.commit()
-                    st.success(f"✅ Product **{sel_item}** updated successfully.")
+                    st.session_state["edit_saved_code"] = sel_item
+                    st.session_state["edit_saved_name"] = prod.product_name
                     st.rerun()
 
             # ── DELETE ────────────────────────────────────────────────────────
