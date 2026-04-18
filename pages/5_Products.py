@@ -67,27 +67,100 @@ with tab_add:
         if "add_saved_fob" in st.session_state:
             del st.session_state["add_saved_fob"]
 
-    # Auto item code preview
+    # ── Clone existing product ───────────────────────────────────────────────
+    with st.expander("Clone an existing product", expanded=False):
+        st.caption("Search for any existing product, edit the fields, then save as a new item code.")
+        clone_search = st.text_input("Search by product name", placeholder="e.g. Twisties",
+                                      key="clone_search")
+        if clone_search:
+            matches = db.query(Product).filter(
+                Product.product_name.ilike(f"%{clone_search}%")
+            ).order_by(Product.product_name).limit(30).all()
+
+            if not matches:
+                st.info("No products found.")
+            else:
+                clone_map = {p.item_code: f"{p.item_code} — {p.product_name} [{p.supplier_code}]"
+                             for p in matches}
+                clone_sel = st.selectbox("Select product to clone", [""] + list(clone_map.keys()),
+                                          format_func=lambda x: clone_map.get(x, "— select —") if x else "— select —",
+                                          key="clone_sel")
+                if clone_sel:
+                    src = db.get(Product, clone_sel)
+                    st.info(f"Fields below are pre-filled from **{src.item_code}**. "
+                            f"Edit anything you need, then click Save Product. "
+                            f"A new item code will be assigned automatically.")
+                    if st.button("Load this product into form", type="primary", key="clone_load"):
+                        st.session_state["clone_cat"]    = src.product_category
+                        st.session_state["clone_name"]   = src.product_name
+                        st.session_state["clone_pack"]   = src.packing
+                        st.session_state["clone_uom"]    = src.uom
+                        st.session_state["clone_orig"]   = src.origin
+                        st.session_state["clone_hs"]     = src.hs_code or ""
+                        st.session_state["clone_sup"]    = src.supplier_code
+                        st.session_state["clone_curr"]   = src.cost_currency
+                        st.session_state["clone_rate"]   = str(src.exchange_rate_id) if src.exchange_rate_id else ""
+                        st.session_state["clone_cost"]   = float(src.cost_price)
+                        st.session_state["clone_disc"]   = float(src.discount_pct)
+                        st.session_state["clone_add"]    = float(src.cost_additions)
+                        st.session_state["clone_margin"] = float(src.margin_pct)
+                        st.session_state["clone_cbm"]    = float(src.ctn_cbm or 0)
+                        st.session_state["clone_wt"]     = float(src.ctn_weight or 0)
+                        st.session_state["clone_active"] = True
+                        st.rerun()
+
+    st.divider()
+
+    # ── Auto item code preview ────────────────────────────────────────────────
     suggested_code = next_item_code()
     st.info(f"Next item code will be: **{suggested_code}** (auto-assigned on save)")
+
+    # Show clone-active notice
+    if st.session_state.get("clone_active"):
+        st.warning("Cloning mode — fields pre-filled from an existing product. "
+                   "Edit as needed and click Save Product to create a new item.")
+        if st.button("Clear clone / start fresh", key="clone_clear"):
+            for k in list(st.session_state.keys()):
+                if k.startswith("clone_"):
+                    del st.session_state[k]
+            st.rerun()
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown("**Product details**")
-        prod_cat  = st.text_input("Product category *", placeholder="e.g. Snacks, Cleaning, Diapers")
-        prod_name = st.text_input("Product name *")
-        packing   = st.text_input("Packing *", placeholder="e.g. 24 x 60g / ctn")
-        uom       = st.text_input("UOM *", placeholder="e.g. CTN")
-        origin    = st.text_input("Origin *", placeholder="e.g. Malaysia")
-        hs_sel    = st.selectbox("HS code (optional)", list(hs_map.keys()),
-                                  format_func=lambda x: hs_map[x])
+        prod_cat  = st.text_input("Product category *", placeholder="e.g. Snacks, Cleaning, Diapers",
+                             value=st.session_state.get("clone_cat",""), key="form_cat")
+        prod_name = st.text_input("Product name *", value=st.session_state.get("clone_name",""), key="form_name")
+        packing   = st.text_input("Packing *", placeholder="e.g. 24 x 60g / ctn",
+                             value=st.session_state.get("clone_pack",""), key="form_pack")
+        uom       = st.text_input("UOM *", placeholder="e.g. CTN",
+                           value=st.session_state.get("clone_uom",""), key="form_uom")
+        origin    = st.text_input("Origin *", placeholder="e.g. Malaysia",
+                             value=st.session_state.get("clone_orig",""), key="form_orig")
+        clone_hs_val = st.session_state.get("clone_hs", "")
+        hs_keys      = list(hs_map.keys())
+        hs_idx       = hs_keys.index(clone_hs_val) if clone_hs_val in hs_keys else 0
+        hs_sel       = st.selectbox("HS code (optional)", hs_keys,
+                                     index=hs_idx,
+                                     format_func=lambda x: hs_map[x],
+                                     key="form_hs")
 
     with col2:
         st.markdown("**Supplier & costing**")
-        sup_sel   = st.selectbox("Supplier *", [""] + list(sup_map.keys()),
-                                  format_func=lambda x: sup_map.get(x, "— select supplier —") if x else "— select supplier —")
-        cost_curr = st.selectbox("Cost currency *", curr_codes if curr_codes else [""])
+        clone_sup_val = st.session_state.get("clone_sup", "")
+        sup_keys      = [""] + list(sup_map.keys())
+        sup_idx       = sup_keys.index(clone_sup_val) if clone_sup_val in sup_keys else 0
+        sup_sel       = st.selectbox("Supplier *", sup_keys,
+                                      index=sup_idx,
+                                      format_func=lambda x: sup_map.get(x, "— select supplier —") if x else "— select supplier —",
+                                      key="form_sup")
+        clone_curr_val = st.session_state.get("clone_curr", "")
+        curr_idx       = curr_codes.index(clone_curr_val) if clone_curr_val in curr_codes else 0
+        cost_curr      = st.selectbox("Cost currency *",
+                                       curr_codes if curr_codes else [""],
+                                       index=curr_idx,
+                                       key="form_curr")
 
         # Exchange rate — SGD auto, others require selection
         if cost_curr == BASE_CURRENCY:
@@ -100,10 +173,15 @@ with tab_add:
                 if r.base_currency == cost_curr or r.target_currency == cost_curr
             }
             if relevant_rates:
+                clone_rate_val = st.session_state.get("clone_rate", "")
+                rate_keys      = list(relevant_rates.keys())
+                rate_idx       = rate_keys.index(clone_rate_val) if clone_rate_val in rate_keys else 0
                 rate_sel = st.selectbox(
                     f"Exchange rate ({cost_curr} → SGD) *",
-                    list(relevant_rates.keys()),
+                    rate_keys,
+                    index=rate_idx,
                     format_func=lambda x: relevant_rates.get(x, "— select —"),
+                    key="form_rate",
                 )
             else:
                 st.warning(f"No exchange rate found for {cost_curr} → SGD. Add one in Reference Data first.")
@@ -111,12 +189,18 @@ with tab_add:
 
     with col3:
         st.markdown("**Pricing**")
-        cost_price = st.number_input("Cost price *",      min_value=0.0, value=0.0, step=0.01, format="%.4f")
-        discount   = st.number_input("Discount %",        min_value=0.0, max_value=100.0, value=0.0, step=0.5)
-        additions  = st.number_input("Cost additions",    min_value=0.0, value=0.0, step=0.01, format="%.4f")
-        margin     = st.number_input("Margin % *",        min_value=0.0, max_value=99.0, value=18.0, step=0.5)
-        ctn_cbm    = st.number_input("CTN CBM (optional)", min_value=0.0, value=0.0, step=0.0001, format="%.4f")
-        ctn_wt     = st.number_input("CTN weight kg (optional)", min_value=0.0, value=0.0, step=0.01)
+        cost_price = st.number_input("Cost price *",      min_value=0.0, step=0.01, format="%.4f",
+                               value=st.session_state.get("clone_cost", 0.0), key="form_cost")
+        discount   = st.number_input("Discount %",        min_value=0.0, max_value=100.0, step=0.5,
+                               value=st.session_state.get("clone_disc", 0.0), key="form_disc")
+        additions  = st.number_input("Cost additions",    min_value=0.0, step=0.01, format="%.4f",
+                               value=st.session_state.get("clone_add", 0.0), key="form_add")
+        margin     = st.number_input("Margin % *",        min_value=0.0, max_value=99.0, step=0.5,
+                               value=st.session_state.get("clone_margin", 18.0), key="form_margin")
+        ctn_cbm    = st.number_input("CTN CBM (optional)", min_value=0.0, step=0.0001, format="%.4f",
+                               value=st.session_state.get("clone_cbm", 0.0), key="form_cbm")
+        ctn_wt     = st.number_input("CTN weight kg (optional)", min_value=0.0, step=0.01,
+                               value=st.session_state.get("clone_wt", 0.0), key="form_wt")
 
     # ── Live FOB price preview ────────────────────────────────────────────────
     st.divider()
@@ -221,9 +305,9 @@ FOB price SGD       = SGD {result['fob_price_sgd']:.2f}  (rounded up to nearest 
             db.commit()
             st.session_state["add_saved_code"] = item_code
             st.session_state["add_saved_fob"]  = result["fob_price_sgd"]
-            # Clear all add-form fields
+            # Clear all add-form and clone fields
             for key in list(st.session_state.keys()):
-                if key.startswith("add_"):
+                if key.startswith("add_") or key.startswith("clone_") or key.startswith("form_"):
                     del st.session_state[key]
             st.rerun()
 
