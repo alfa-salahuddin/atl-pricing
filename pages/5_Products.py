@@ -91,22 +91,25 @@ with tab_add:
                             f"Edit anything you need, then click Save Product. "
                             f"A new item code will be assigned automatically.")
                     if st.button("Load this product into form", type="primary", key="clone_load"):
-                        st.session_state["clone_cat"]    = src.product_category
-                        st.session_state["clone_name"]   = src.product_name
-                        st.session_state["clone_pack"]   = src.packing
-                        st.session_state["clone_uom"]    = src.uom
-                        st.session_state["clone_orig"]   = src.origin
-                        st.session_state["clone_hs"]     = src.hs_code or ""
-                        st.session_state["clone_sup"]    = src.supplier_code
-                        st.session_state["clone_curr"]   = src.cost_currency
-                        st.session_state["clone_rate"]   = str(src.exchange_rate_id) if src.exchange_rate_id else ""
-                        st.session_state["clone_cost"]   = float(src.cost_price)
-                        st.session_state["clone_disc"]   = float(src.discount_pct)
-                        st.session_state["clone_add"]    = float(src.cost_additions)
-                        st.session_state["clone_margin"] = float(src.margin_pct)
-                        st.session_state["clone_cbm"]    = float(src.ctn_cbm or 0)
-                        st.session_state["clone_wt"]     = float(src.ctn_weight or 0)
-                        st.session_state["clone_active"] = True
+                        # Write directly into the widget keys so Streamlit picks them up
+                        st.session_state["form_cat"]    = src.product_category
+                        st.session_state["form_name"]   = src.product_name
+                        st.session_state["form_pack"]   = src.packing
+                        st.session_state["form_uom"]    = src.uom
+                        st.session_state["form_orig"]   = src.origin
+                        st.session_state["form_cost"]   = float(src.cost_price)
+                        st.session_state["form_disc"]   = float(src.discount_pct)
+                        st.session_state["form_add"]    = float(src.cost_additions)
+                        st.session_state["form_margin"] = float(src.margin_pct)
+                        st.session_state["form_cbm"]    = float(src.ctn_cbm or 0)
+                        st.session_state["form_wt"]     = float(src.ctn_weight or 0)
+                        # Store reference values for selectboxes (handled separately)
+                        st.session_state["clone_hs"]    = src.hs_code or ""
+                        st.session_state["clone_sup"]   = src.supplier_code
+                        st.session_state["clone_curr"]  = src.cost_currency
+                        st.session_state["clone_rate"]  = str(src.exchange_rate_id) if src.exchange_rate_id else ""
+                        st.session_state["clone_active"]= True
+                        st.session_state["clone_src"]   = src.item_code
                         st.rerun()
 
     st.divider()
@@ -117,7 +120,8 @@ with tab_add:
 
     # Show clone-active notice
     if st.session_state.get("clone_active"):
-        st.warning("Cloning mode — fields pre-filled from an existing product. "
+        src_code = st.session_state.get("clone_src", "")
+        st.warning(f"Cloning mode — fields pre-filled from **{src_code}**. "
                    "Edit as needed and click Save Product to create a new item.")
         if st.button("Clear clone / start fresh", key="clone_clear"):
             for k in list(st.session_state.keys()):
@@ -129,15 +133,11 @@ with tab_add:
 
     with col1:
         st.markdown("**Product details**")
-        prod_cat  = st.text_input("Product category *", placeholder="e.g. Snacks, Cleaning, Diapers",
-                             value=st.session_state.get("clone_cat",""), key="form_cat")
-        prod_name = st.text_input("Product name *", value=st.session_state.get("clone_name",""), key="form_name")
-        packing   = st.text_input("Packing *", placeholder="e.g. 24 x 60g / ctn",
-                             value=st.session_state.get("clone_pack",""), key="form_pack")
-        uom       = st.text_input("UOM *", placeholder="e.g. CTN",
-                           value=st.session_state.get("clone_uom",""), key="form_uom")
-        origin    = st.text_input("Origin *", placeholder="e.g. Malaysia",
-                             value=st.session_state.get("clone_orig",""), key="form_orig")
+        prod_cat  = st.text_input("Product category *", placeholder="e.g. Snacks, Cleaning, Diapers", key="form_cat")
+        prod_name = st.text_input("Product name *", key="form_name")
+        packing   = st.text_input("Packing *", placeholder="e.g. 24 x 60g / ctn", key="form_pack")
+        uom       = st.text_input("UOM *", placeholder="e.g. CTN", key="form_uom")
+        origin    = st.text_input("Origin *", placeholder="e.g. Malaysia", key="form_orig")
         clone_hs_val = st.session_state.get("clone_hs", "")
         hs_keys      = list(hs_map.keys())
         hs_idx       = hs_keys.index(clone_hs_val) if clone_hs_val in hs_keys else 0
@@ -189,18 +189,12 @@ with tab_add:
 
     with col3:
         st.markdown("**Pricing**")
-        cost_price = st.number_input("Cost price *",      min_value=0.0, step=0.01, format="%.4f",
-                               value=st.session_state.get("clone_cost", 0.0), key="form_cost")
-        discount   = st.number_input("Discount %",        min_value=0.0, max_value=100.0, step=0.5,
-                               value=st.session_state.get("clone_disc", 0.0), key="form_disc")
-        additions  = st.number_input("Cost additions",    min_value=0.0, step=0.01, format="%.4f",
-                               value=st.session_state.get("clone_add", 0.0), key="form_add")
-        margin     = st.number_input("Margin % *",        min_value=0.0, max_value=99.0, step=0.5,
-                               value=st.session_state.get("clone_margin", 18.0), key="form_margin")
-        ctn_cbm    = st.number_input("CTN CBM (optional)", min_value=0.0, step=0.0001, format="%.4f",
-                               value=st.session_state.get("clone_cbm", 0.0), key="form_cbm")
-        ctn_wt     = st.number_input("CTN weight kg (optional)", min_value=0.0, step=0.01,
-                               value=st.session_state.get("clone_wt", 0.0), key="form_wt")
+        cost_price = st.number_input("Cost price *",      min_value=0.0, step=0.01, format="%.4f", key="form_cost")
+        discount   = st.number_input("Discount %",        min_value=0.0, max_value=100.0, step=0.5, key="form_disc")
+        additions  = st.number_input("Cost additions",    min_value=0.0, step=0.01, format="%.4f", key="form_add")
+        margin     = st.number_input("Margin % *",        min_value=0.0, max_value=99.0, step=0.5, key="form_margin")
+        ctn_cbm    = st.number_input("CTN CBM (optional)", min_value=0.0, step=0.0001, format="%.4f", key="form_cbm")
+        ctn_wt     = st.number_input("CTN weight kg (optional)", min_value=0.0, step=0.01, key="form_wt")
 
     # ── Live FOB price preview ────────────────────────────────────────────────
     st.divider()
@@ -537,3 +531,4 @@ with tab_view:
         st.info("No products found.")
 
 db.close()
+
