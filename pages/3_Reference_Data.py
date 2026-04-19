@@ -9,6 +9,7 @@ st.set_page_config(page_title="Reference Data — ATL Pricing", layout="wide")
 st.title("Reference data")
 
 db: Session = SessionLocal()
+try:
 
 tab_ports, tab_sl, tab_curr, tab_fx = st.tabs(["Ports", "Shipping lines", "Currencies", "Exchange rates"])
 
@@ -154,4 +155,7 @@ with tab_fx:
     else:
         st.info("No exchange rates yet.")
 
-db.close()
+pass
+finally:
+    db.close()
+
