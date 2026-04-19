@@ -8,7 +8,6 @@ st.set_page_config(page_title="HS Codes — ATL Pricing", layout="wide")
 st.title("HS codes  (Singapore)")
 
 db: Session = SessionLocal()
-try:
 
 with st.expander("➕  Add / edit HS code", expanded=False):
     hs       = st.text_input("HS code *  (8-digit Singapore code, e.g. 19059010)").strip()
@@ -64,7 +63,4 @@ if codes:
 else:
     st.info("No HS codes found. Add one above." if not search else "No results for that search.")
 
-pass
-finally:
-    db.close()
-
+db.close()
