@@ -12,6 +12,7 @@ st.set_page_config(page_title="Proforma Invoice — ATL Pricing", layout="wide")
 st.title("Proforma invoice")
 
 db: Session = SessionLocal()
+try:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -591,6 +592,6 @@ else:
             else:
                 st.error(f"Text doesn't match. Type exactly: {quot.quot_id}")
 
-db.close()
-
-
+pass
+finally:
+    db.close()
