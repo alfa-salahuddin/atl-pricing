@@ -1,7 +1,8 @@
-import streamlit as st
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
 import re
+import streamlit as st
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from contextlib import contextmanager
 
 
 def get_engine():
@@ -28,13 +29,13 @@ def get_engine():
 
     return create_engine(
         url,
-        pool_pre_ping=True,       # test connection before using it
-        pool_size=3,              # keep max 3 persistent connections
-        max_overflow=2,           # allow 2 extra under load
-        pool_timeout=10,          # wait max 10s for a connection
-        pool_recycle=300,         # recycle connections every 5 minutes
+        pool_pre_ping=True,    # test each connection before use
+        pool_size=3,           # max 3 persistent connections
+        max_overflow=2,        # 2 extra allowed under burst load
+        pool_timeout=15,       # wait up to 15s for a free connection
+        pool_recycle=180,      # recycle connections every 3 minutes
         connect_args={
-            "sslmode":        "require",
+            "sslmode":         "require",
             "connect_timeout": 10,
         },
     )
@@ -48,8 +49,14 @@ class Base(DeclarativeBase):
     pass
 
 
+@contextmanager
 def get_db():
-    """Use as a context manager: with get_db() as db:"""
+    """
+    Safe context manager — always closes the session.
+    Usage:
+        with get_db() as db:
+            results = db.query(...)
+    """
     db = SessionLocal()
     try:
         yield db
