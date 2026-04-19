@@ -72,3 +72,4 @@ try:
 
 finally:
     db.close()
+
