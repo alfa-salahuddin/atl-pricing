@@ -10,6 +10,7 @@ st.set_page_config(page_title="Bulk Upload — ATL Pricing", layout="wide")
 st.title("Bulk upload")
 
 db: Session = SessionLocal()
+try:
 
 tab_prod, tab_cust = st.tabs(["New products", "Customers"])
 
@@ -341,4 +342,7 @@ with tab_cust:
                 st.success(f"✅  {imported} customer(s) imported successfully!")
                 st.balloons()
 
-db.close()
+pass
+finally:
+    db.close()
+
