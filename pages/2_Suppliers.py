@@ -8,6 +8,7 @@ st.set_page_config(page_title="Suppliers — ATL Pricing", layout="wide")
 st.title("Suppliers")
 
 db: Session = SessionLocal()
+try:
 
 ports = db.query(Port).order_by(Port.port_code).all()
 port_options = {p.port_code: f"{p.port_code} — {p.port_name}" for p in ports}
@@ -92,4 +93,7 @@ else:
         st.success(f"Supplier {del_code} deleted.")
         st.rerun()
 
-db.close()
+pass
+finally:
+    db.close()
+
