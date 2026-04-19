@@ -11,6 +11,7 @@ st.set_page_config(page_title="Update Prices — ATL Pricing", layout="wide")
 st.title("Update supplier prices")
 
 db: Session = SessionLocal()
+try:
 
 # ── Download template ────────────────────────────────────────────────────────
 st.subheader("Step 1 — Download the price update template")
@@ -126,4 +127,6 @@ if uploaded:
                 st.success(f"✅  {len(preview_rows)} product(s) updated successfully.")
                 st.balloons()
 
-db.close()
+pass
+finally:
+    db.close()
