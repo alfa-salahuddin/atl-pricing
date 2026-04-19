@@ -1,6 +1,7 @@
 import streamlit as st
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
+import re
 
 
 def get_engine():
@@ -16,31 +17,30 @@ def get_engine():
         st.error("DATABASE_URL is not set.")
         st.stop()
 
-    # Normalise driver prefix
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
 
-    # Strip any existing sslmode param then re-add cleanly
     if "sslmode" in url:
-        import re
         url = re.sub(r"[?&]sslmode=[^&]*", "", url)
 
-    connector = "&" if "?" in url else "?"
-    url = f"{url}{connector}sslmode=require"
+    sep = "&" if "?" in url else "?"
+    url = f"{url}{sep}sslmode=require"
 
     return create_engine(
         url,
-        pool_pre_ping=True,
-        pool_size=2,
-        max_overflow=2,
+        pool_pre_ping=True,       # test connection before using it
+        pool_size=3,              # keep max 3 persistent connections
+        max_overflow=2,           # allow 2 extra under load
+        pool_timeout=10,          # wait max 10s for a connection
+        pool_recycle=300,         # recycle connections every 5 minutes
         connect_args={
-            "sslmode": "require",
+            "sslmode":        "require",
             "connect_timeout": 10,
         },
     )
 
 
-engine     = get_engine()
+engine       = get_engine()
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
@@ -49,6 +49,7 @@ class Base(DeclarativeBase):
 
 
 def get_db():
+    """Use as a context manager: with get_db() as db:"""
     db = SessionLocal()
     try:
         yield db
