@@ -8,6 +8,7 @@ st.set_page_config(page_title="Customers — ATL Pricing", layout="wide")
 st.title("Customers")
 
 db: Session = SessionLocal()
+try:
 
 # ── Helper ──────────────────────────────────────────────────────────────────
 def load_customers():
@@ -89,4 +90,6 @@ else:
         st.success(f"Customer {del_code} deleted.")
         st.rerun()
 
-db.close()
+pass
+finally:
+    db.close()
