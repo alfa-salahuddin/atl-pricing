@@ -13,7 +13,6 @@ st.title("Data backup")
 st.write("Export all data to a single Excel workbook. Run this regularly to keep a safe copy of your data.")
 
 db: Session = SessionLocal()
-try:
 
 def q_to_df(records) -> pd.DataFrame:
     if not records:
@@ -58,6 +57,4 @@ st.subheader("What's in the backup")
 st.write("The backup contains one sheet per data table: Customers, Suppliers, Ports, Shipping Lines, Currencies, Exchange Rates, HS Codes, Products, Quotations, Quotation Items, Price Change Log.")
 st.info("Tip: Save a backup before any major bulk upload or data change.")
 
-pass
-finally:
-    db.close()
+db.close()
