@@ -193,28 +193,8 @@ def product_selection_panel(line_key: str):
         num_rows="fixed",
         key=f"{line_key}_editor",
     )
-    # Net FOB = stored FOB SGD (already rounded to 0.10) minus item discount
-    # Only recompute FOB from cost if the margin field was changed from default
-    import math
-    def calc_net_fob(row):
-        stored_fob   = float(row.get("FOB SGD", 0))
-        cost         = float(row.get("Cost SGD", 0))
-        margin_now   = float(row.get("Margin %", 0))
-        disc         = float(row.get("Item discount", 0))
-        # Recalculate implied master margin from stored FOB and cost
-        # If they match (within 0.01), use stored FOB directly
-        if cost > 0:
-            implied_margin = round((stored_fob / cost - 1) * 100, 2)
-            margin_changed = abs(margin_now - implied_margin) > 0.01
-        else:
-            margin_changed = False
-        if margin_changed and cost > 0:
-            raw_fob  = cost * (1 + margin_now / 100)
-            fob_used = math.ceil(round(raw_fob * 10, 8)) / 10
-        else:
-            fob_used = stored_fob
-        return max(0.0, round(fob_used - disc, 4))
-    edited["Net FOB SGD"] = edited.apply(calc_net_fob, axis=1)
+    # Net FOB = FOB SGD (Master) - Item discount. Simple subtraction, no recalculation.
+    edited["Net FOB SGD"] = (edited["FOB SGD"] - edited["Item discount"]).round(4).clip(lower=0)
     selected = edited[(edited["Select"] == True) & (edited["Qty (ctns)"] > 0)]
 
     if st.button("➕  Add to order", type="primary",
@@ -222,21 +202,8 @@ def product_selection_panel(line_key: str):
         added = 0
         for _, row in selected.iterrows():
             p       = prod_map.get(row["Item code"])
-            cost_sgd    = float(row.get("Cost SGD", 0))
-            edit_margin = float(row.get("Margin %", 0))
-            stored_fob  = float(row.get("FOB SGD", p.fob_price_sgd if p else 0))
-            import math
-            if cost_sgd > 0:
-                implied_margin = round((stored_fob / cost_sgd - 1) * 100, 2)
-                margin_changed = abs(edit_margin - implied_margin) > 0.01
-            else:
-                margin_changed = False
-            if margin_changed and cost_sgd > 0:
-                raw_fob     = cost_sgd * (1 + edit_margin / 100)
-                fob_rounded = math.ceil(round(raw_fob * 10, 8)) / 10
-            else:
-                fob_rounded = stored_fob
-            net_fob = max(0.0, round(fob_rounded - float(row["Item discount"]), 4))
+            stored_fob = float(row.get("FOB SGD", p.fob_price_sgd if p else 0))
+            net_fob    = max(0.0, round(stored_fob - float(row["Item discount"]), 4))
             existing = next((l for l in st.session_state[line_key]
                              if l["item_code"] == row["Item code"]), None)
             if existing:
