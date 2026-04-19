@@ -193,16 +193,23 @@ def product_selection_panel(line_key: str):
         num_rows="fixed",
         key=f"{line_key}_editor",
     )
-    # Recompute FOB from cost using edited margin, then apply discount
+    # Net FOB = stored FOB SGD (already rounded to 0.10) minus item discount
+    # If margin was edited, recompute FOB from cost first, then subtract discount
     import math
-    def calc_fob(row):
-        cost    = float(row.get("Cost SGD", 0))
-        margin  = float(row.get("Margin %", 0))
-        disc    = float(row.get("Item discount", 0))
-        raw_fob = cost * (1 + margin / 100)
-        rounded = math.ceil(round(raw_fob * 10, 8)) / 10   # round up to 0.10
-        return max(0.0, round(rounded - disc, 4))
-    edited["Net FOB SGD"] = edited.apply(calc_fob, axis=1)
+    def calc_net_fob(row):
+        stored_fob  = float(row.get("FOB SGD", 0))
+        cost        = float(row.get("Cost SGD", 0))
+        margin      = float(row.get("Margin %", 0))
+        disc        = float(row.get("Item discount", 0))
+        # Check if margin was changed from the stored FOB's implied margin
+        # Recompute FOB only if cost > 0 (avoids zero-cost edge case)
+        if cost > 0:
+            raw_fob  = cost * (1 + margin / 100)
+            fob_used = math.ceil(round(raw_fob * 10, 8)) / 10
+        else:
+            fob_used = stored_fob
+        return max(0.0, round(fob_used - disc, 4))
+    edited["Net FOB SGD"] = edited.apply(calc_net_fob, axis=1)
     selected = edited[(edited["Select"] == True) & (edited["Qty (ctns)"] > 0)]
 
     if st.button("➕  Add to order", type="primary",
@@ -210,12 +217,16 @@ def product_selection_panel(line_key: str):
         added = 0
         for _, row in selected.iterrows():
             p       = prod_map.get(row["Item code"])
-            cost_sgd   = float(row.get("Cost SGD", 0))
-            edit_margin= float(row.get("Margin %", 0))
+            cost_sgd    = float(row.get("Cost SGD", 0))
+            edit_margin = float(row.get("Margin %", 0))
+            stored_fob  = float(row.get("FOB SGD", p.fob_price_sgd if p else 0))
             import math
-            raw_fob    = cost_sgd * (1 + edit_margin / 100)
-            fob_rounded= math.ceil(round(raw_fob * 10, 8)) / 10
-            net_fob    = max(0.0, round(fob_rounded - float(row["Item discount"]), 4))
+            if cost_sgd > 0:
+                raw_fob     = cost_sgd * (1 + edit_margin / 100)
+                fob_rounded = math.ceil(round(raw_fob * 10, 8)) / 10
+            else:
+                fob_rounded = stored_fob
+            net_fob = max(0.0, round(fob_rounded - float(row["Item discount"]), 4))
             existing = next((l for l in st.session_state[line_key]
                              if l["item_code"] == row["Item code"]), None)
             if existing:
