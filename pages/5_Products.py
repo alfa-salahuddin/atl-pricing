@@ -10,6 +10,7 @@ st.set_page_config(page_title="Products — ATL Pricing", layout="wide")
 st.title("Products master")
 
 db: Session = SessionLocal()
+try:
 
 # ── Reference data ────────────────────────────────────────────────────────────
 suppliers  = db.query(Supplier).order_by(Supplier.supplier_code).all()
@@ -530,5 +531,6 @@ with tab_view:
     else:
         st.info("No products found.")
 
-db.close()
-
+pass
+finally:
+    db.close()
