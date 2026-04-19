@@ -23,7 +23,6 @@ Run this once, then delete this page from GitHub.
 """)
 
 db = SessionLocal()
-try:
 all_products = db.query(Product).all()
 st.write(f"**Total products to update:** {len(all_products)}")
 
@@ -107,6 +106,4 @@ if st.button("✅  Recalculate ALL products now", type="primary"):
     st.success(f"✅ Done — **{fixed}** products recalculated with correct markup formula and rounding.")
     st.info("Delete `99_Fix_Margins.py` from GitHub after verifying the Products page looks correct.")
 
-pass
-finally:
-    db.close()
+db.close()
