@@ -194,17 +194,22 @@ def product_selection_panel(line_key: str):
         key=f"{line_key}_editor",
     )
     # Net FOB = stored FOB SGD (already rounded to 0.10) minus item discount
-    # If margin was edited, recompute FOB from cost first, then subtract discount
+    # Only recompute FOB from cost if the margin field was changed from default
     import math
     def calc_net_fob(row):
-        stored_fob  = float(row.get("FOB SGD", 0))
-        cost        = float(row.get("Cost SGD", 0))
-        margin      = float(row.get("Margin %", 0))
-        disc        = float(row.get("Item discount", 0))
-        # Check if margin was changed from the stored FOB's implied margin
-        # Recompute FOB only if cost > 0 (avoids zero-cost edge case)
+        stored_fob   = float(row.get("FOB SGD", 0))
+        cost         = float(row.get("Cost SGD", 0))
+        margin_now   = float(row.get("Margin %", 0))
+        disc         = float(row.get("Item discount", 0))
+        # Recalculate implied master margin from stored FOB and cost
+        # If they match (within 0.01), use stored FOB directly
         if cost > 0:
-            raw_fob  = cost * (1 + margin / 100)
+            implied_margin = round((stored_fob / cost - 1) * 100, 2)
+            margin_changed = abs(margin_now - implied_margin) > 0.01
+        else:
+            margin_changed = False
+        if margin_changed and cost > 0:
+            raw_fob  = cost * (1 + margin_now / 100)
             fob_used = math.ceil(round(raw_fob * 10, 8)) / 10
         else:
             fob_used = stored_fob
@@ -222,6 +227,11 @@ def product_selection_panel(line_key: str):
             stored_fob  = float(row.get("FOB SGD", p.fob_price_sgd if p else 0))
             import math
             if cost_sgd > 0:
+                implied_margin = round((stored_fob / cost_sgd - 1) * 100, 2)
+                margin_changed = abs(edit_margin - implied_margin) > 0.01
+            else:
+                margin_changed = False
+            if margin_changed and cost_sgd > 0:
                 raw_fob     = cost_sgd * (1 + edit_margin / 100)
                 fob_rounded = math.ceil(round(raw_fob * 10, 8)) / 10
             else:
