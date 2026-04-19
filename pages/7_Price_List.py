@@ -11,7 +11,6 @@ st.set_page_config(page_title="Price List — ATL Pricing", layout="wide")
 st.title("Price list")
 
 db: Session = SessionLocal()
-try:
 
 # ── Step 1: Port of loading ──────────────────────────────────────────────────
 st.subheader("Step 1 — Select port of loading")
@@ -152,6 +151,4 @@ if st.button("Generate price list", type="primary", disabled=len(selected_codes)
         type="primary",
     )
 
-pass
-finally:
-    db.close()
+db.close()
